@@ -9,7 +9,7 @@ Docker App
 # Run MySQL
 
 Open the Docker App
-Input into terminal: run docker-compose.yml file
+Input into terminal: run docker-compose.yml file(or 'docker compose up -d')
 
 # Run DB
 

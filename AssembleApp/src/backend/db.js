@@ -33,9 +33,9 @@ async function connect() {
 
   // Step 1: Connect WITHOUT a database to create it if needed
   const tempConn = await mysql.createConnection({
-    host:     process.env.DB_HOST   || 'localhost',
-    port:     Number(process.env.DB_PORT) || 3306,
-    user:     process.env.DB_USER     || 'root',
+    host: process.env.DB_HOST || 'localhost',
+    port: Number(process.env.DB_PORT) || 3306,
+    user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || 'password',
   });
 
@@ -46,15 +46,15 @@ async function connect() {
 
   // Step 2: Now create the pool pointed at the (guaranteed) database
   pool = mysql.createPool({
-    host:     process.env.DB_HOST     || 'localhost',
-    port:     Number(process.env.DB_PORT) || 3306,
-    user:     process.env.DB_USER     || 'root',
+    host: process.env.DB_HOST || 'localhost',
+    port: Number(process.env.DB_PORT) || 3306,
+    user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || 'password',
     database: dbName,
     waitForConnections: true,
-    connectionLimit:    10,
-    queueLimit:         0,
-    timezone:           'Z',
+    connectionLimit: 10,
+    queueLimit: 0,
+    timezone: 'Z',
   });
 
   await _initSchema();
@@ -192,7 +192,7 @@ async function _initSchema() {
 
 /** Build a SET clause from a plain object, returning { clause, values }. */
 function _buildSet(fields) {
-  const keys   = Object.keys(fields);
+  const keys = Object.keys(fields);
   const clause = keys.map(k => `\`${k}\` = ?`).join(', ');
   const values = keys.map(k => fields[k]);
   return { clause, values };
@@ -209,12 +209,12 @@ const users = {
    */
   async create(data) {
     const { username, email, password_hash, display_name = null,
-            bio = null, role = 'member' } = data;
+      bio = null, role = 'member' } = data;
 
     const result = await query(
       `INSERT INTO users (username, email, password_hash, display_name, bio, role)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [username, email, password_hash, display_name, bio,  role]
+      [username, email, password_hash, display_name, bio, role]
     );
     return users.getById(result.insertId);
   },
@@ -256,7 +256,7 @@ const users = {
    */
   async update(id, fields) {
     const allowed = ['display_name', 'bio', 'role', 'is_active', 'password_hash'];
-    const safe    = Object.fromEntries(Object.entries(fields).filter(([k]) => allowed.includes(k)));
+    const safe = Object.fromEntries(Object.entries(fields).filter(([k]) => allowed.includes(k)));
     if (!Object.keys(safe).length) throw new Error('No valid fields to update.');
     const { clause, values } = _buildSet(safe);
     await query(`UPDATE users SET ${clause} WHERE id = ?`, [...values, id]);
@@ -269,7 +269,7 @@ const users = {
     return users.getById(id);
   },
 
-    /** Mark user as verified (deactivate) a user. */
+  /** Mark user as verified (deactivate) a user. */
   async verify(id) {
     await query(`UPDATE users SET is_verified = 1 WHERE id = ?`, [id]);
     return users.getById(id);
@@ -304,7 +304,7 @@ const events = {
       `INSERT INTO events
          (creator_id, title, description, location, starts_at, ends_at, status)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [creator_id, title, description, location,  starts_at, ends_at, status]
+      [creator_id, title, description, location, starts_at, ends_at, status]
     );
     // Auto-enrol creator as organiser
     await events.addParticipant(result.insertId, creator_id, 'organiser');
@@ -330,10 +330,12 @@ const events = {
                FROM events e
                JOIN users u ON u.id = e.creator_id
                WHERE 1=1`;
-    if (status)     { sql += ' AND e.status = ?';          params.push(status); }
-    if (creator_id) { sql += ' AND e.creator_id = ?';      params.push(creator_id); }
-    if (search)     { sql += ' AND (e.title LIKE ? OR e.description LIKE ?)';
-                      params.push(`%${search}%`, `%${search}%`); }
+    if (status) { sql += ' AND e.status = ?'; params.push(status); }
+    if (creator_id) { sql += ' AND e.creator_id = ?'; params.push(creator_id); }
+    if (search) {
+      sql += ' AND (e.title LIKE ? OR e.description LIKE ?)';
+      params.push(`%${search}%`, `%${search}%`);
+    }
     sql += ' ORDER BY e.starts_at ASC LIMIT ? OFFSET ?';
     params.push(limit, offset);
     return query(sql, params);
@@ -346,9 +348,9 @@ const events = {
    *           starts_at?, ends_at?, status?}} fields
    */
   async update(id, fields) {
-    const allowed = ['title','description','location',
-                     'starts_at','ends_at','status'];
-    const safe    = Object.fromEntries(Object.entries(fields).filter(([k]) => allowed.includes(k)));
+    const allowed = ['title', 'description', 'location',
+      'starts_at', 'ends_at', 'status'];
+    const safe = Object.fromEntries(Object.entries(fields).filter(([k]) => allowed.includes(k)));
     if (!Object.keys(safe).length) throw new Error('No valid fields to update.');
     const { clause, values } = _buildSet(safe);
     await query(`UPDATE events SET ${clause} WHERE id = ?`, [...values, id]);
@@ -389,6 +391,36 @@ const events = {
       [eventId]
     );
   },
+
+  //Get events in which a user is a participant(for home)
+  async getForUser(userId) {
+    return query(
+      `SELECT e.*, u.username AS creator_username
+     FROM events e
+     JOIN event_participants ep ON ep.event_id = e.id
+     JOIN users u ON u.id = e.creator_id
+     WHERE ep.user_id = ?
+     ORDER BY e.starts_at ASC`,
+      [userId]
+    );
+  },
+
+  //Get events in which a user is a participant(for discovery)
+  async getNotForUser(userId) {
+  return query(
+    `SELECT e.*, u.username AS creator_username
+     FROM events e
+     JOIN users u ON u.id = e.creator_id
+     WHERE NOT EXISTS (
+       SELECT 1
+       FROM event_participants ep
+       WHERE ep.event_id = e.id
+         AND ep.user_id = ?
+     )
+     ORDER BY e.starts_at ASC`,
+    [userId]
+  );
+},
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -440,7 +472,7 @@ const reports = {
    * List reports — filterable by status, reported user, reporter, or event.
    */
   async list({ reporter_id = null, reported_id = null, event_id = null,
-               status = null, reason = null, limit = 50, offset = 0 } = {}) {
+    status = null, reason = null, limit = 50, offset = 0 } = {}) {
     const params = [];
     let sql = `SELECT r.*,
                       u1.username AS reporter_username,
@@ -451,9 +483,9 @@ const reports = {
                WHERE 1=1`;
     if (reporter_id != null) { sql += ' AND r.reporter_id = ?'; params.push(reporter_id); }
     if (reported_id != null) { sql += ' AND r.reported_id = ?'; params.push(reported_id); }
-    if (event_id    != null) { sql += ' AND r.event_id = ?';    params.push(event_id); }
-    if (status)              { sql += ' AND r.status = ?';      params.push(status); }
-    if (reason)              { sql += ' AND r.reason = ?';      params.push(reason); }
+    if (event_id != null) { sql += ' AND r.event_id = ?'; params.push(event_id); }
+    if (status) { sql += ' AND r.status = ?'; params.push(status); }
+    if (reason) { sql += ' AND r.reason = ?'; params.push(reason); }
     sql += ' ORDER BY r.created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
     return query(sql, params);
@@ -466,7 +498,7 @@ const reports = {
    */
   async update(id, fields) {
     const allowed = ['reason', 'description'];
-    const safe    = Object.fromEntries(Object.entries(fields).filter(([k]) => allowed.includes(k)));
+    const safe = Object.fromEntries(Object.entries(fields).filter(([k]) => allowed.includes(k)));
     if (!Object.keys(safe).length) throw new Error('No valid fields to update.');
     const { clause, values } = _buildSet(safe);
     await query(`UPDATE user_reports SET ${clause} WHERE id = ?`, [...values, id]);
