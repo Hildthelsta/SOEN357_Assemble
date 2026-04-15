@@ -32,7 +32,7 @@ export default function App() {
     }
 
     fetchUserEvents();
-  }, [user]);
+  }, [user, screen]);
 
   //load in the discovery events
   useEffect(() => {
@@ -50,7 +50,7 @@ export default function App() {
     }
 
     fetchDiscover();
-  }, [user]);
+  }, [user, screen]);
 
   useEffect(() => {
     if (!user || user.role !== "admin") return;
